@@ -1,0 +1,248 @@
+################## Read the data files into R  ############################
+sets<-read.csv("C:/Users/13055/Downloads/lego-database/sets.csv")
+parts<-read.csv("C:/Users/13055/Downloads/lego-database/parts.csv")
+inventory_sets<-read.csv("C:/Users/13055/Downloads/lego-database/inventory_sets.csv")
+inventory<-read.csv("C:/Users/13055/Downloads/lego-database/inventories.csv")
+inventory_parts<-read.csv("C:/Users/13055/Downloads/lego-database/inventory_parts.csv")
+themes<-read.csv("C:/Users/13055/Downloads/lego-database/themes.csv")
+part_category<-read.csv("C:/Users/13055/Downloads/lego-database/part_categories.csv")
+
+################  Analyzing Lego data and prescribing how it can increase sales & its warehouse capabilities ###################
+
+
+### installing packages for SQL
+
+install.packages("RMySQL")
+library(RMySQL)
+
+### To connect , using dbConnect() function:
+  
+  con=dbConnect(MySQL(),
+                user='awsbigdata',password= "bigdata123",
+                dbname = 'Entertainment',host='aws.c0cy2sgqhaev.us-east-1.rds.amazonaws.com')
+
+
+###### Import  data into the new  table
+
+result = dbSendQuery(con,"SELECT * FROM inventory")
+
+## store the result and fetches all of the records
+inventory = fetch(result, n = -1)
+print(inventory)
+
+
+
+result = dbSendQuery(con,"SELECT * FROM colors")
+result = dbSendQuery(con,"SELECT * FROM sets")
+result = dbSendQuery(con,"SELECT * FROM inventory_sets")
+result = dbSendQuery(con,"SELECT * FROM parts")
+result = dbSendQuery(con,"SELECT * FROM inventory_parts")
+result = dbSendQuery(con,"SELECT * FROM themes")
+result = dbSendQuery(con,"SELECT * FROM part_category")
+
+## store the result and fetches all of the records
+
+colors = fetch(result, n = -1)
+print(colors)
+
+sets = fetch(result, n = -1)
+print(sets)
+
+parts = fetch(result, n = -1)
+print(parts)
+
+inventory_sets = fetch(result, n = -1)
+print(inventory_sets)
+
+inventory = fetch(result, n = -1)
+print(inventory)
+
+inventory_parts = fetch(result, n = -1)
+print(inventory_parts)
+
+themes = fetch(result, n = -1)
+print(themes)
+
+part_category = fetch(result, n = -1)
+print(part_category)
+
+
+############ Importing Libraries #############################
+
+library(ggplot2) 
+library(readr) 
+library(tidyverse,warn.conflicts = FALSE)
+library(RColorBrewer)
+library(plotly)
+library(ggrepel)
+library(treemap)
+
+
+
+#######  theme
+my_theme <- function(base_size = 12, base_family = "Helvetica"){
+  theme(axis.title.y = element_blank(),axis.title.x = element_blank(),
+        plot.title = element_text(face="bold", size=16),
+        axis.text = element_text(face="bold"),
+        plot.background = element_rect(fill = 'snow2',color='white'),
+        strip.text.y = element_text(angle=180),
+        legend.position = 'None', legend.title = element_blank())
+}
+
+#Change in Lego numbers in set over time
+#We check the change in number of Lego blocks in set over time. We take the median into account as the data is skewed.
+
+# group by year
+byYear <- sets %>% group_by(year) 
+
+# summarize the median (not mean b/c the data is so skewed) by year
+medianPartsByYear <- byYear %>% summarise(parts = median(num_parts), mean = mean(num_parts))
+
+# add to our plot from earlier
+ggplot(sets, aes(x = year, y = num_parts)) + geom_point() + 
+  geom_line(data = medianPartsByYear, aes(x = year, y = parts), col = "Green") +
+  geom_line(data = medianPartsByYear, aes(x = year, y = mean), col = "Yellow")
+
+
+#We regress the number of parts over the year, and check if the coefficients are significant
+
+summary(lm(num_parts ~ year, data = sets))
+
+
+#The p value for the coefficient for year variable is '<2e-16', and thus year's coefficient is highly significant.
+#Colors of the Lego
+######We convert the color codes to hex form, to use them in color palatte
+
+colors <- colors %>% 
+  mutate(hex = paste0("#", rgb),
+         rgb = toRGB(hex)) %>%
+  separate(rgb, into=c('prefix','r','g','b','alp'), sep = "\\(|,|\\)") %>%
+  mutate(rgb = paste(r, g, b, sep=','))
+
+colors_rgb <- colors %>%
+  select(r,g,b) %>% mutate_all(as.numeric)
+colors_hsv <- t(rgb2hsv(t(colors_rgb))) %>% as.data.frame()
+colors <- colors %>% cbind(colors_hsv)
+merge <- sets %>% 
+  left_join(inventory, by = "set_num") %>%
+  left_join(inventory_parts, by = c("id" = "inventory_id")) %>%
+  left_join(colors, by = c("color_id" = "id")) 
+brick_colors = merge %>%
+  mutate(decade = year- (year%%10)) %>%
+  group_by(hex, h, decade) %>%
+  summarize(total = n())
+
+
+#########  Sorted unique colors by decaded #############
+
+pal <- unique(colors$hex)
+names(pal) <- unique(pal) 
+color_year <- merge %>% group_by(year) %>% summarise(unique_colors = length(unique(color_id)))
+options(repr.plot.width=6, repr.plot.height=3)
+
+#########  checking  the number of unique colors released over the years.
+
+color_year %>% ggplot(aes(x=year, y=unique_colors)) +geom_line(size=0.5)+
+  geom_point(color="blue",size=1)+labs(title="Unique colors each year")
+
+
+###################    Regressing number of unique colors on the year ################
+summary(lm(unique_colors ~ year, data = color_year))
+
+####################   Plotting the different colors on the year axis, to get a visual understanding. ###########
+
+brick_colors_yr = merge %>%
+  group_by(hex, year) %>%
+  summarize(total = n())
+
+brick_colors_yr %>%
+  ggplot(aes(x = year, y=1, fill = hex)) + 
+  geom_col(color = 'white', size=0.01) + 
+  labs(caption = "source: Rebrickable")  +    
+  scale_x_continuous(breaks = seq(1950,2020, by=10)) + 
+  scale_y_continuous(breaks = seq(0,120, by=20)) + 
+  ggtitle("Distinct Colors of Lego brick 1950 - 2017") +
+  scale_fill_manual(values = pal) +
+  theme_void( ) +
+  my_theme() + theme(plot.margin=unit(c(1,1,1.5,1.2),"cm"))
+
+############### Themes ###############################################
+#Plotting the number of themes released over the years
+
+sets %>%select(year,theme_id)%>%group_by(year)%>%
+summarise(theme_count=length(unique(theme_id)))%>%
+ggplot(aes(x=year,y=theme_count))+geom_line()+
+geom_point(color="red",size=1)+labs(title="Themes Released per year")
+
+colnames(themes)[2]<-"theme_name"
+colnames(sets)[2]<-"set_name"
+themes<-themes[,-3]
+colors1<-colors
+my_color<-colors1$hex
+
+set_themes<-themes %>%left_join(sets,by=c("id"="theme_id"))
+themes_per_set<-set_themes%>%select(theme_name,set_num) %>% 
+ group_by(theme_name)%>%summarise(set_cnt=length(unique(set_num)))%>%
+ arrange(desc(set_cnt))%>%head(50)
+
+
+options(repr.plot.width=5, repr.plot.height=4)
+themes_per_set %>% head(15) %>% 
+  ggplot(aes(x=reorder(theme_name,set_cnt),set_cnt,fill=theme_name))+
+  geom_bar(stat="identity")+scale_fill_manual(values=(my_color))+
+  coord_flip()+theme(legend.position = "none")+
+  labs(x="Theme",y="sets",title="Top Lego Themes based on set Count")
+
+
+options(repr.plot.width=7, repr.plot.height=4)
+set_themes %>% filter(theme_name %in% c("Star Wars","City","Space","Vikings","Studios","Super Heroes","The LEGO Movie",
+                                        "The Lord of the Rings","Ninjago","Toy Story" ))%>% 
+  group_by(year,theme_name)%>%summarise(set=length(unique(set_name)))%>%
+  ggplot(aes(x=year,y=set,fill=theme_name))+geom_bar(stat="identity")+
+  labs(title="Popular Lego Themes from 1950")+scale_fill_manual(values=(my_color))
+
+############  Regressing the theme over the year #############
+
+summary(lm(theme_id ~ year, data = sets))
+
+
+############################# ONE WAY ANOVA #################################################
+
+#One way ANOVA and Tukey test
+#We plot the number of parts in set over the decades to see the trend.
+
+sets1 <- sets %>% mutate(decade = (year%/%10)*10)
+sets1$decade <- paste0(as.character(sets1$decade),"s")
+sets1$decade <- as.factor(sets1$decade)
+
+sets1 %>%
+  group_by(decade) %>%
+  summarise(
+    count_sets = n(),
+    mean_num_parts = mean(num_parts, na.rm = TRUE),
+    sd_num_parts = sd(num_parts, na.rm = TRUE)
+  )
+
+
+#####################  Boxplot  #################
+
+ggplot(sets1, aes(x = decade, y = num_parts, fill = decade)) +
+  geom_boxplot() +
+  geom_jitter(shape = 1, size = .1,
+              color = "steelblue",
+              position = position_jitter(0.1)) +
+  theme_classic()
+
+
+########  We perform one way ANOVA to check if the num of parts in sets has changed over decades ##########
+
+anova_one_way <- aov(num_parts~decade, data = sets1)
+summary(anova_one_way)
+
+
+#The p-value is lower than the threshold of 0.001. It means the NULL hypothesis that there is no change over the decades is rejected.
+#The one-way ANOVA test does not inform which group has a different mean. Instead, you can perform a Tukey test.
+
+############# Performing Tukey Test ######################
+
+TukeyHSD(anova_one_way)
