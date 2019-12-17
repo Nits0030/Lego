@@ -18,7 +18,7 @@ library(RMySQL)
 ### To connect , using dbConnect() function:
   
   con=dbConnect(MySQL(),
-                user='awsbigdata',password= "bigdata123",
+                user='####',password= "#########",
                 dbname = 'Entertainment',host='aws.c0cy2sgqhaev.us-east-1.rds.amazonaws.com')
 
 
