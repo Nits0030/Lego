@@ -1,4 +1,4 @@
-## Lego
+## Entertainment - Lego
 
 The LEGO Group has turned into the biggest toy organization on the globe and they can think back to a glad history of over 50 years of delivering blocks and different toys. 
 
